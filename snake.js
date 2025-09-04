@@ -222,16 +222,28 @@ function collision(head,array){
 
 /**
  * 由两个相邻格的坐标，推导从 a 指向 b 的离散方向
+ * 增强版：增加容错处理，确保始终返回有效方向
  */
 function directionBetween(a, b){
     if (!a || !b) return null;
-    if (a.x === b.x){
-        return (b.y < a.y) ? "UP" : "DOWN";
+    
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    
+    // 处理水平移动（优先水平方向）
+    if (Math.abs(dx) >= Math.abs(dy)) {
+        if (dx > 0) return "RIGHT";
+        if (dx < 0) return "LEFT";
     }
-    if (a.y === b.y){
-        return (b.x < a.x) ? "LEFT" : "RIGHT";
+    
+    // 处理垂直移动
+    if (Math.abs(dy) > 0) {
+        if (dy > 0) return "DOWN";
+        if (dy < 0) return "UP";
     }
-    return null;
+    
+    // 兜底：如果坐标完全相同，返回默认方向
+    return "RIGHT";
 }
 
 /**
@@ -413,11 +425,14 @@ function render(alpha){
             const tailImg = getTailImage(toPrev);
             ctx.drawImage(tailImg, x, y, box, box);
         }else{
-            // 身体：由与前后两节的相对位置推导拐角/直线图块
+            // 身体：优先使用保存的方向信息，避免实时计算导致的不一致
             const segPrev = snake[i - 1];
             const segNext = snake[i + 1];
-            const dirToPrev = directionBetween(curr, segPrev) || segPrev.direction;
-            const dirToNext = directionBetween(curr, segNext) || segNext.direction;
+            
+            // 使用保存的方向信息，备用实时计算
+            let dirToPrev = curr.direction || directionBetween(curr, segPrev) || segPrev.direction || "RIGHT";
+            let dirToNext = segNext ? (segNext.direction || directionBetween(segNext, curr) || dirToPrev) : dirToPrev;
+            
             const bodyImg = getBodyImage(dirToPrev, dirToNext);
             ctx.drawImage(bodyImg, x, y, box, box);
         }
@@ -477,8 +492,12 @@ function update(){
         snake.pop();
     }
 
-    // 新蛇头
-    let newHead = { x: snakeX, y: snakeY, direction: d };
+    // 新蛇头 - 确保有正确的方向信息
+    let newHead = { 
+        x: snakeX, 
+        y: snakeY, 
+        direction: d || snake[0].direction || "RIGHT" 
+    };
 
     // 碰撞/越界
     if(snakeX < box || snakeX > 17 * box || snakeY < 3*box || snakeY > 17*box || collision(newHead,snake)){
@@ -502,6 +521,16 @@ function update(){
     }
 
     snake.unshift(newHead);
+    
+    // 确保所有蛇节都有正确的方向信息
+    for (let i = 1; i < snake.length; i++) {
+        if (!snake[i].direction) {
+            // 从前一节推导方向
+            const prevSeg = snake[i - 1];
+            const currSeg = snake[i];
+            snake[i].direction = directionBetween(currSeg, prevSeg) || prevSeg.direction || "RIGHT";
+        }
+    }
 }
 
 // ==================== 游戏启动区域 ====================
@@ -554,7 +583,7 @@ window.resumeGame = function(){
 };
 
 window.restartGame = function(){
-    // 重置游戏状态
+    // 重置游戏状态 - 确保初始蛇身有正确的方向
     snake = [{ x: 9 * box, y: 10 * box, direction: "RIGHT" }];
     food = { x : Math.floor(Math.random()*17+1) * box,
              y : Math.floor(Math.random()*15+3) * box };
@@ -562,7 +591,7 @@ window.restartGame = function(){
     level = 1;
     comboCount = 0;
     gameSpeed = baseSpeed;
-    d = undefined;
+    d = "RIGHT"; // 设置初始方向，避免undefined
     lastScoreTime = 0;
     
     startGame();
