@@ -95,6 +95,13 @@ right.src = "audio/right.mp3";
 left.src = "audio/left.mp3";
 down.src = "audio/down.mp3";
 
+// 预加载音效
+const sounds = [dead, eat, up, right, left, down];
+sounds.forEach(sound => {
+    sound.preload = 'auto';
+    sound.load();
+});
+
 // ==================== 游戏数据初始化区域 ====================
 // 创建蛇的数据结构
 // 蛇是一个数组，每个元素包含位置坐标(x,y)和方向信息
@@ -119,13 +126,17 @@ let food = {
 // 初始化游戏分数
 // 每吃一个食物分数+1
 let score = 0;
-// 高分记录（持久化到 localStorage）
-let bestScore = parseInt(localStorage.getItem("bestScore") || "0", 10);
+// 当前游戏等级
+let level = 1;
+// 连击计数器
+let comboCount = 0;
 // 运行速度（毫秒/步）与定时器句柄
-let gameSpeed = 160; // 默认更顺手；渲染仍然平滑，逻辑步更快
+let gameSpeed = 200; // 初始速度
+let baseSpeed = 200; // 基础速度
 let game;            // 逻辑步进的计时器（setInterval）
 let rafId = null;    // requestAnimationFrame 句柄（渲染）
 let lastTickAt = 0;  // 上一次逻辑步开始的时间戳（ms）
+let lastScoreTime = 0; // 上次得分时间（用于连击计算）
 
 // 为了实现平滑渲染，我们在每个逻辑步保存一份“上一次”的蛇身位置
 let prevSnake = [];
@@ -134,42 +145,57 @@ let prevSnake = [];
 // 存储当前的移动方向："LEFT"、"UP"、"RIGHT"、"DOWN"
 let d;
 
-// 添加键盘事件监听器，监听方向键按下事件
-document.addEventListener("keydown",direction);
+// 设置输入管理器回调
+inputManager.setDirectionCallback(changeDirection);
 
 /**
- * 键盘方向控制函数
- * 处理玩家的键盘输入，控制蛇的移动方向
+ * 统一的方向改变函数
+ * 处理来自键盘、触控、虚拟按钮的方向输入
  * 
- * @param {KeyboardEvent} event - 键盘事件对象
- * 
- * 按键映射：
- * - 37 (←): 向左移动
- * - 38 (↑): 向上移动  
- * - 39 (→): 向右移动
- * - 40 (↓): 向下移动
- * 
- * 防止反向移动逻辑：
- * - 当前向右时，不能直接向左
- * - 当前向下时，不能直接向上
- * - 当前向左时，不能直接向右
- * - 当前向上时，不能直接向下
+ * @param {string} newDirection - 新的移动方向
  */
-function direction(event){
-    let key = event.keyCode;  // 获取按键码
+function changeDirection(newDirection) {
+    // 防止反向移动逻辑
+    if (newDirection === "LEFT" && d !== "RIGHT") {
+        d = "LEFT";
+        playDirectionSound("LEFT");
+    } else if (newDirection === "UP" && d !== "DOWN") {
+        d = "UP";
+        playDirectionSound("UP");
+    } else if (newDirection === "RIGHT" && d !== "LEFT") {
+        d = "RIGHT";
+        playDirectionSound("RIGHT");
+    } else if (newDirection === "DOWN" && d !== "UP") {
+        d = "DOWN";
+        playDirectionSound("DOWN");
+    }
+}
+
+/**
+ * 播放方向音效
+ */
+function playDirectionSound(direction) {
+    if (!gameStorage.getSettings().sound) return;
     
-    if( key == 37 && d != "RIGHT"){        // 左箭头键且当前不是向右
-        left.play();                       // 播放向左移动音效
-        d = "LEFT";                        // 设置移动方向为向左
-    }else if(key == 38 && d != "DOWN"){    // 上箭头键且当前不是向下
-        d = "UP";                          // 设置移动方向为向上
-        up.play();                         // 播放向上移动音效
-    }else if(key == 39 && d != "LEFT"){    // 右箭头键且当前不是向左
-        d = "RIGHT";                       // 设置移动方向为向右
-        right.play();                      // 播放向右移动音效
-    }else if(key == 40 && d != "UP"){      // 下箭头键且当前不是向上
-        d = "DOWN";                        // 设置移动方向为向下
-        down.play();                       // 播放向下移动音效
+    const volume = gameStorage.getSettings().volume / 100;
+    
+    switch(direction) {
+        case "LEFT":
+            left.volume = volume;
+            left.play();
+            break;
+        case "UP":
+            up.volume = volume;
+            up.play();
+            break;
+        case "RIGHT":
+            right.volume = volume;
+            right.play();
+            break;
+        case "DOWN":
+            down.volume = volume;
+            down.play();
+            break;
     }
 }
 
@@ -279,15 +305,61 @@ function getBodyImage(prevDirection, currentDirection) {
 
 /**
  * 更新HUD显示
- * 同步当前分数、最高分和游戏速度到页面UI
+ * 同步当前分数、最高分和等级到页面UI
  */
-function updateHUD(){
-    const s = document.getElementById("scoreValue");
-    if (s) s.textContent = score;
-    const b = document.getElementById("bestScoreValue");
-    if (b) b.textContent = bestScore;
-    const sp = document.getElementById("speedValue");
-    if (sp) sp.textContent = gameSpeed + "ms";
+function updateHUD() {
+    GameUI.updateHUD(score, gameStorage.data.bestScore, level);
+}
+
+/**
+ * 计算当前等级
+ */
+function calculateLevel() {
+    return Math.floor(score / 5) + 1;
+}
+
+/**
+ * 更新游戏速度
+ */
+function updateGameSpeed() {
+    const newLevel = calculateLevel();
+    if (newLevel !== level) {
+        level = newLevel;
+        gameSpeed = Math.max(80, baseSpeed - (level - 1) * 15);
+        
+        // 显示等级提升提示
+        showLevelUpNotification();
+        
+        // 重新设置定时器
+        if (game) {
+            clearInterval(game);
+            game = setInterval(tick, gameSpeed);
+        }
+    }
+}
+
+/**
+ * 显示等级提升通知
+ */
+function showLevelUpNotification() {
+    // 可以在这里添加等级提升的视觉效果
+    console.log(`Level Up! 等级 ${level}`);
+}
+
+/**
+ * 计算连击得分
+ */
+function calculateComboScore() {
+    const now = Date.now();
+    if (now - lastScoreTime < 1000) { // 1秒内连击
+        comboCount++;
+        lastScoreTime = now;
+        return 1 + Math.floor(comboCount / 3); // 每3连击额外加1分
+    } else {
+        comboCount = 0;
+        lastScoreTime = now;
+        return 1;
+    }
 }
 
 // ==================== 核心游戏循环函数 ====================
@@ -353,11 +425,8 @@ function render(alpha){
     
     // 步骤3：绘制食物（红苹果）
     ctx.drawImage(foodImg, food.x, food.y, box, box);
-    // 步骤9：绘制分数显示
-    ctx.fillStyle = "white";              // 设置文字颜色为白色
-    ctx.font = "45px Changa one";         // 设置字体大小和类型
-    ctx.fillText(score,2*box,1.6*box);    // 在左上角显示当前分数
-    updateHUD();  // 同步UI显示
+    // 更新HUD显示（移除Canvas内文字显示，使用HTML界面）
+    updateHUD();
 }
 
 // 仅负责推进一次逻辑帧（移动、吃、死亡判断）。不做渲染。
@@ -374,17 +443,35 @@ function update(){
 
     // 吃到食物
     if(snakeX == food.x && snakeY == food.y){
-        score++;
-        eat.play();
+        const points = calculateComboScore();
+        score += points;
+        
+        // 播放音效
+        if (gameStorage.getSettings().sound) {
+            eat.volume = gameStorage.getSettings().volume / 100;
+            eat.play();
+        }
+        
+        // 显示得分动画
+        const canvas = document.getElementById('snake');
+        const rect = canvas.getBoundingClientRect();
+        const x = rect.left + (food.x / 608) * rect.width;
+        const y = rect.top + (food.y / 608) * rect.height;
+        GameUI.showScoreAnimation(points, x, y);
+        
+        // 生成新食物
         food = {
             x : Math.floor(Math.random()*17+1) * box,
             y : Math.floor(Math.random()*15+3) * box
         };
-        if (score > bestScore) {
-            bestScore = score;
-            localStorage.setItem("bestScore", String(bestScore));
-        }
+        
+        // 更新最高分
+        gameStorage.updateBestScore(score);
+        
+        // 更新游戏速度和等级
+        updateGameSpeed();
         updateHUD();
+        
         // 不 pop()，长度 +1
     }else{
         snake.pop();
@@ -398,12 +485,19 @@ function update(){
         // 停止计时器与渲染
         if (game){ clearInterval(game); game = null; }
         if (rafId){ cancelAnimationFrame(rafId); rafId = null; }
-        dead.play();
-        if (score > bestScore) {
-            bestScore = score;
-            localStorage.setItem("bestScore", String(bestScore));
+        
+        // 播放死亡音效
+        if (gameStorage.getSettings().sound) {
+            dead.volume = gameStorage.getSettings().volume / 100;
+            dead.play();
         }
-        updateHUD();
+        
+        // 更新最高分记录
+        gameStorage.updateBestScore(score);
+        
+        // 显示游戏结束界面
+        GameUI.gameOver(score, level);
+        
         return;
     }
 
@@ -445,10 +539,12 @@ window.startGame = function(speed){
     startRenderLoop();
     updateHUD();
 };
+
 window.pauseGame = function(){
     if (game){ clearInterval(game); game = null; }
     if (rafId){ cancelAnimationFrame(rafId); rafId = null; }
 };
+
 window.resumeGame = function(){
     if (!game){
         lastTickAt = performance.now();
@@ -456,12 +552,21 @@ window.resumeGame = function(){
     }
     if (!rafId){ startRenderLoop(); }
 };
+
 window.restartGame = function(){
+    // 重置游戏状态
     snake = [{ x: 9 * box, y: 10 * box, direction: "RIGHT" }];
     food = { x : Math.floor(Math.random()*17+1) * box,
              y : Math.floor(Math.random()*15+3) * box };
-    score = 0; d = undefined;
+    score = 0;
+    level = 1;
+    comboCount = 0;
+    gameSpeed = baseSpeed;
+    d = undefined;
+    lastScoreTime = 0;
+    
     startGame();
 };
 
-startGame(gameSpeed);
+// 游戏初始化时不自动开始，等待用户操作
+// startGame(gameSpeed);

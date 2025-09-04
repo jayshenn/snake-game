@@ -8,37 +8,157 @@
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
         <link rel="stylesheet" href="styles.css">
+        <link rel="stylesheet" href="css/animations.css">
     </head>
     <body>
-        <header class="site-header">
-            <div class="brand">
-                <span class="logo">🐍</span>
-                <span class="title">Snake</span>
+        <!-- 主菜单界面 -->
+        <div id="mainMenu" class="screen active">
+            <header class="menu-header">
+                <div class="brand">
+                    <span class="logo">🐍</span>
+                    <h1 class="title">Snake Master</h1>
+                </div>
+                <div class="high-score">最高分: <span id="menuBestScore">0</span></div>
+            </header>
+            <div class="menu-content">
+                <button class="menu-btn primary" onclick="GameUI.startNewGame()">开始游戏</button>
+                <button class="menu-btn secondary" onclick="GameUI.showSettings()">游戏设置</button>
+                <button class="menu-btn secondary" onclick="GameUI.showStats()">游戏统计</button>
             </div>
-        </header>
+        </div>
 
-        <main class="container">
-            <section class="game-layout">
+        <!-- 游戏界面 -->
+        <div id="gameScreen" class="screen">
+            <header class="game-header">
                 <div class="hud">
                     <div class="stats">
                         <div class="stat"><span class="label">Score</span><span class="value" id="scoreValue">0</span></div>
                         <div class="stat"><span class="label">Best</span><span class="value" id="bestScoreValue">0</span></div>
-                        <div class="stat"><span class="label">Speed</span><span class="value" id="speedValue">300ms</span></div>
+                        <div class="stat"><span class="label">Level</span><span class="value" id="levelValue">1</span></div>
                     </div>
                     <div class="controls">
-                        <button class="btn secondary" onclick="restartGame()">Restart</button>
-                        <button class="btn secondary" onclick="pauseGame()">Pause</button>
-                        <button class="btn" onclick="resumeGame()">Resume</button>
+                        <button class="btn secondary" onclick="GameUI.pauseGame()">暂停</button>
+                        <button class="btn secondary" onclick="GameUI.backToMenu()">菜单</button>
                     </div>
                 </div>
+            </header>
 
+            <main class="game-container">
                 <div class="game-card">
                     <canvas id="snake" width="608" height="608"></canvas>
+                    
+                    <!-- 移动端虚拟按键 -->
+                    <div id="virtualControls" class="virtual-controls">
+                        <div class="d-pad">
+                            <button class="v-btn up" data-direction="UP">↑</button>
+                            <div class="middle">
+                                <button class="v-btn left" data-direction="LEFT">←</button>
+                                <button class="v-btn right" data-direction="RIGHT">→</button>
+                            </div>
+                            <button class="v-btn down" data-direction="DOWN">↓</button>
+                        </div>
+                    </div>
                 </div>
-                <p class="hint">方向键操作。吃苹果加分，别撞墙/撞到自己。</p>
-            </section>
-        </main>
+                
+                <!-- 得分动画容器 -->
+                <div id="scoreAnimations"></div>
+            </main>
+        </div>
 
+        <!-- 暂停界面 -->
+        <div id="pauseScreen" class="screen overlay">
+            <div class="pause-content">
+                <h2>游戏暂停</h2>
+                <p>按空格键或点击继续</p>
+                <div class="pause-controls">
+                    <button class="btn" onclick="GameUI.resumeGame()">继续游戏</button>
+                    <button class="btn secondary" onclick="GameUI.restartGame()">重新开始</button>
+                    <button class="btn secondary" onclick="GameUI.backToMenu()">返回菜单</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 游戏结束界面 -->
+        <div id="gameOverScreen" class="screen overlay">
+            <div class="game-over-content">
+                <h2 class="game-over-title">游戏结束</h2>
+                <div class="final-stats">
+                    <div class="stat-item">
+                        <span class="label">最终得分</span>
+                        <span class="value" id="finalScore">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="label">最高分</span>
+                        <span class="value" id="finalBestScore">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="label">达到等级</span>
+                        <span class="value" id="finalLevel">1</span>
+                    </div>
+                </div>
+                <div class="game-over-controls">
+                    <button class="btn" onclick="GameUI.restartGame()">再来一局</button>
+                    <button class="btn secondary" onclick="GameUI.backToMenu()">返回菜单</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 设置界面 -->
+        <div id="settingsScreen" class="screen overlay">
+            <div class="settings-content">
+                <h2>游戏设置</h2>
+                <div class="settings-options">
+                    <div class="setting-item">
+                        <label for="soundToggle">音效</label>
+                        <input type="checkbox" id="soundToggle" checked>
+                    </div>
+                    <div class="setting-item">
+                        <label for="volumeSlider">音量</label>
+                        <input type="range" id="volumeSlider" min="0" max="100" value="50">
+                    </div>
+                    <div class="setting-item">
+                        <label for="controlType">控制方式</label>
+                        <select id="controlType">
+                            <option value="keyboard">键盘</option>
+                            <option value="touch">触屏</option>
+                            <option value="both">两者</option>
+                        </select>
+                    </div>
+                </div>
+                <button class="btn" onclick="GameUI.closeSettings()">确定</button>
+            </div>
+        </div>
+
+        <!-- 统计界面 -->
+        <div id="statsScreen" class="screen overlay">
+            <div class="stats-content">
+                <h2>游戏统计</h2>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <span class="stat-number" id="totalGames">0</span>
+                        <span class="stat-label">游戏次数</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-number" id="totalScore">0</span>
+                        <span class="stat-label">总得分</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-number" id="avgScore">0</span>
+                        <span class="stat-label">平均分</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-number" id="maxLevel">1</span>
+                        <span class="stat-label">最高等级</span>
+                    </div>
+                </div>
+                <button class="btn" onclick="GameUI.closeStats()">返回</button>
+            </div>
+        </div>
+
+        <!-- 加载所有脚本模块 -->
+        <script src="js/storage.js"></script>
+        <script src="js/input.js"></script>
+        <script src="js/ui.js"></script>
         <script src="snake.js"></script>
     </body>
 </html>
